@@ -18,10 +18,13 @@ module Inertia
         enum: FRAMEWORKS.keys,
         default: nil
 
+
       class_option :typescript, type: :boolean, default: false,
         desc: "Whether to use TypeScript"
 
-      class_option :package_manager, type: :string, default: nil, enum: %w[npm yarn bun],
+ 
+      class_option :package_manager, type: :string, default: nil, enum: %w[npm yarn bun pnpm],
+
         desc: "The package manager you want to use to install Inertia's npm packages"
 
       class_option :interactive, type: :boolean, default: true,
@@ -33,6 +36,9 @@ module Inertia
         desc: "Whether to install Vite Ruby"
       class_option :example_page, type: :boolean, default: true,
         desc: "Whether to add an example Inertia page"
+
+      class_option :verbose, type: :boolean, default: false,
+        desc: "Run the generator in verbose mode"
 
       remove_class_option :skip_namespace, :skip_collision_check
 
@@ -51,7 +57,7 @@ module Inertia
 
         say "Copying bin/dev"
         copy_file "#{__dir__}/templates/dev", "bin/dev"
-        chmod "bin/dev", 0o755, verbose: false
+        chmod "bin/dev", 0o755, verbose: verbose?
 
         say "Inertia's Rails adapter successfully installed", :green
       end
@@ -152,14 +158,14 @@ module Inertia
 
         in_root do
           Bundler.with_original_env do
-            if (capture = run("bundle add vite_rails", capture: true))
+            if (capture = run("bundle add vite_rails", capture: !verbose?))
               say "Vite Rails gem successfully installed", :green
             else
               say capture
               say_error "Failed to install Vite Rails gem", :red
               exit(false)
             end
-            if (capture = run("bundle exec vite install", capture: true))
+            if (capture = run("bundle exec vite install", capture: !verbose?))
               say "Vite Rails successfully installed", :green
             else
               say capture
@@ -175,10 +181,20 @@ module Inertia
 
         if package_manager.nil?
           say_status "Could not find a package.json file to install Inertia to.", nil
+        elsif gem_installed?("webpacker") || gem_installed?("shakapacker")
+          say "Webpacker or Shakapacker is installed.", :yellow
+          say "Vite Ruby can work alongside Webpacker or Shakapacker, but it might cause issues.", :yellow
+          say "Please see the Vite Ruby documentation for the migration guide:", :yellow
+          say "https://vite-ruby.netlify.app/guide/migration.html#webpacker-%F0%9F%93%A6", :yellow
         else
-          say_status "Could not find a Vite configuration files (`config/vite.json` & `vite.config.{ts,js,mjs,cjs}`).", nil
+          say_status "Could not find a Vite configuration files (`config/vite.json` & `vite.config.{ts,js,mjs,cjs,mts,cts}`).", nil
         end
         false
+      end
+
+      def gem_installed?(name)
+        regex = /^[^#]*gem\s+['"]#{name}['"]/
+        File.read(file_path("Gemfile")).match?(regex)
       end
 
       def application_layout
@@ -195,7 +211,7 @@ module Inertia
 
       def add_packages(*packages)
         in_root do
-          run "#{package_manager} add #{packages.join(" ")} --silent"
+          run "#{package_manager} add #{packages.join(" ")} #{verbose? ? "" : "--silent"}"
         end
       end
 
@@ -204,15 +220,17 @@ module Inertia
 
         if file?("package-lock.json")
           "npm"
-        elsif file?("bun.config.js") || file?("bun.lockb")
+        elsif file?("bun.lockb")
           "bun"
+        elsif file?("pnpm-lock.yaml")
+          "pnpm"
         else
           "yarn"
         end
       end
 
       def vite_config_path
-        @vite_config_path ||= Dir.glob(file_path("vite.config.{ts,js,mjs,cjs}")).first
+        @vite_config_path ||= Dir.glob(file_path("vite.config.{ts,js,mjs,cjs,mts,cts}")).first
       end
 
       def install_vite?
@@ -226,6 +244,7 @@ module Inertia
 
         @install_tailwind = options[:install_tailwind] || yes?("Would you like to install Tailwind CSS? (y/n)", :green)
       end
+
 
       def typescript?
         return @typescript if defined?(@typescript)
@@ -243,6 +262,10 @@ module Inertia
 
       def inertia_svelte_version
         @inertia_svelte_version ||= Gem::Version.new(`npm show @inertiajs/svelte version`.strip)
+
+      def verbose?
+        options[:verbose]
+
       end
 
       def framework
