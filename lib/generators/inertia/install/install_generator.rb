@@ -262,6 +262,7 @@ module Inertia
 
       def inertia_svelte_version
         @inertia_svelte_version ||= Gem::Version.new(`npm show @inertiajs/svelte version`.strip)
+      end
 
       def verbose?
         options[:verbose]
